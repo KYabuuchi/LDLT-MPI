@@ -32,7 +32,7 @@ void ans(int n, double* b)
   }
 
   /* LDLT decomposition: A = L * D * L^t */
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n - 1; i++) {
     double invp = 1.0 / a[i * n + i];
 
     for (int j = i + 1; j < n; j++) {
@@ -108,6 +108,7 @@ void solveSym(int n, double* a)
   MPI_Comm_size(MPI_COMM_WORLD, &nproc);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
+  // ===================================================================
   if (myid == 0) {
     int i = 0;
     double invp = 1.0 / a[i * n + i];
@@ -123,7 +124,6 @@ void solveSym(int n, double* a)
       MPI_Request sreq;
       double* data = new double[j];
       for (int k = 0; k < j; k++) data[k] = a[j * n + (i + 1 + k)];
-      std::cout << "send " << j << std::endl;
       MPI_Isend((void*)data, j, MPI_DOUBLE, myid + 1, 0, MPI_COMM_WORLD, &sreq);
 
 
@@ -132,15 +132,15 @@ void solveSym(int n, double* a)
       MPI_Wait(&sreq, &st);
     }
   }
+  // ===================================================================
   if (myid == 1) {
     int i = 1;
 
-    std::cout << "recv " << 1 << std::endl;
     // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
     double* first_data = new double[1];
-
+    int recv_size = 1, send_size = 1;
     MPI_Request rreq;
-    MPI_Irecv((void*)first_data, 1, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
+    MPI_Irecv((void*)first_data, recv_size, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
     // 待機
     MPI_Status st;
     MPI_Wait(&rreq, &st);
@@ -150,17 +150,64 @@ void solveSym(int n, double* a)
     double invp = 1.0 / a[i * n + i];
 
     for (int j = i + 1; j < n; j++) {
-      std::cout << "recv " << j << std::endl;
+      recv_size++;
       // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
       double* data = new double[j];
       MPI_Request rreq;
-      MPI_Irecv((void*)data, j, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
+      MPI_Irecv((void*)data, recv_size, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
       // 待機
       MPI_Status st;
       MPI_Wait(&rreq, &st);
       // 反映
-      for (int k = 0; k < j; k++)
-        a[j * n + k + 1] = data[k];
+      for (int k = 0; k < recv_size; k++)
+        a[j * n + (myid + k)] = data[k];
+
+
+      double aji = a[j * n + i];
+      a[j * n + i] *= invp;
+      for (int k = i + 1; k <= j; k++)
+        a[j * n + k] -= aji * a[k * n + i];
+
+      // 送信(受信データのバッファ，データ長，データ型，送信元ID，etc)
+      MPI_Request sreq;
+      double* send_data = new double[send_size];
+      for (int k = 0; k < send_size; k++) send_data[k] = a[j * n + (i + 1 + k)];
+      MPI_Isend((void*)send_data, send_size, MPI_DOUBLE, myid + 1, 0, MPI_COMM_WORLD, &sreq);
+      // 待機
+      MPI_Wait(&sreq, &st);
+      send_size++;
+    }
+  }
+  // ===================================================================
+  if (myid == 2) {
+    int i = 2;
+
+    // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
+    int recv_size = 1;
+    double* first_data = new double[1];
+    MPI_Request rreq;
+    MPI_Irecv((void*)first_data, recv_size, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
+    // 待機
+    MPI_Status st;
+    MPI_Wait(&rreq, &st);
+    // 反映
+    a[i * n + i] = first_data[0];
+
+
+    double invp = 1.0 / a[i * n + i];
+
+    for (int j = i + 1; j < n; j++) {
+      recv_size++;
+      // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
+      double* data = new double[j];
+      MPI_Request rreq;
+      MPI_Irecv((void*)data, recv_size, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
+      // 待機
+      MPI_Status st;
+      MPI_Wait(&rreq, &st);
+      // 反映
+      for (int k = 0; k < recv_size; k++)
+        a[j * n + (myid + k)] = data[k];
 
 
       double aji = a[j * n + i];
@@ -168,7 +215,6 @@ void solveSym(int n, double* a)
       for (int k = i + 1; k <= j; k++)
         a[j * n + k] -= aji * a[k * n + i];
     }
-
     // print
     for (int i = 0; i < n; i++) {
       for (int j = 0; j < n; j++)

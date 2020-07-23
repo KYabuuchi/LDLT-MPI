@@ -11,7 +11,7 @@ int main(int argc, char** argv)
   MPI_Init(&argc, &argv);
 
 
-  int n = 3;
+  int n = 4;
   srand(0);
 
   // 行列の生成
