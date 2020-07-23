@@ -10,8 +10,12 @@ int main(int argc, char** argv)
   // 一番最初に呼ぶ初期化
   MPI_Init(&argc, &argv);
 
+  // プロセス数と自身のIDを取得
+  int nproc, myid;
+  MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
-  int n = 4;
+  int n = nproc + 1;
   srand(0);
 
   // 行列の生成
@@ -31,9 +35,6 @@ int main(int argc, char** argv)
     a[i * n + i] = s + 1.0;
   }
 
-  // 自身のIDを取得
-  int myid;
-  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   if (myid == 0) {
 
     // print

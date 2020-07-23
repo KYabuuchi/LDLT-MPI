@@ -1,2 +1,2 @@
 #!/bin/bash
-mpiexec -np 3 a.out
+mpiexec -np 4 a.out
