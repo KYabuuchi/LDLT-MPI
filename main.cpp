@@ -9,7 +9,7 @@
 int main(int argc, char** argv)
 {
   // 乱数
-  srand(0);
+  srand((unsigned)time(NULL));
 
 
   // 一番最初に呼ぶ初期化
@@ -40,7 +40,7 @@ int main(int argc, char** argv)
   }
 
 
-  // 求めるベクトルを作成
+  // 答えとなるベクトルを作成
   double* xx = new double[n];
   assert(xx != NULL);
   for (int i = 0; i < n; i++) xx[i] = 1.0;
@@ -60,20 +60,19 @@ int main(int argc, char** argv)
   std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
 
 
-  if (myid == 0) {
-    std::cout << "time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000 << " [ms]" << std::endl;
-  }
-
   // 確認
   // ===================================================================
   double* output = new double[n];
   MPI_Gather((void*)&x, 1, MPI_DOUBLE, (void*)output, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   if (myid == 0) {
-    double e = 0;
+    double error = 0;
     for (int i = 0; i < n; i++)
-      e += (output[i] - xx[i]) * (output[i] - xx[i]);
-    e = std::sqrt(e);
-    std::cout << "error = " << e << std::endl;
+      error += (output[i] - xx[i]) * (output[i] - xx[i]);
+    error = std::sqrt(error);
+
+    if (error > 1e-13)
+      std::cout << "Xx_WARNING_xX too large error = " << error << std::endl;
+    std::cout << nproc << " " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0 << std::endl;
   }
 
 
