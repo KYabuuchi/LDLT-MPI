@@ -1,4 +1,5 @@
-#include "mpi.hpp"
+#include "para.hpp"
+#include "seq.hpp"
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -7,16 +8,22 @@
 
 int main(int argc, char** argv)
 {
+  // 乱数
+  srand(0);
+
+
   // 一番最初に呼ぶ初期化
   MPI_Init(&argc, &argv);
+
 
   // プロセス数と自身のIDを取得
   int nproc, myid;
   MPI_Comm_size(MPI_COMM_WORLD, &nproc);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
+
+  // 行列のサイズはプロセス数
   int n = nproc;
-  srand(0);
 
 
   // 正定値対称行列を半分だけ作成
@@ -45,40 +52,33 @@ int main(int argc, char** argv)
   seq::symMatVec(n, a, xx, b);
 
 
-  // 出力を入れる配列を作成
-  double* x = new double[n];
-  assert(x != NULL);
-
-
-  if (myid == 0) {
-    seq::ans(n, a, b);
-  }
-
+  // 並列計算
+  MPI_Barrier(MPI_COMM_WORLD);
   std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+  double x = para::solveSym(n, a, b);
+  MPI_Barrier(MPI_COMM_WORLD);
+  std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
 
-  MPI_Barrier(MPI_COMM_WORLD);
-  para::solveSym(n, a, b);
-  MPI_Barrier(MPI_COMM_WORLD);
 
   if (myid == 0) {
-    std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
     std::cout << "time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000 << " [ms]" << std::endl;
   }
+
+  // 確認
+  // ===================================================================
+  double* output = new double[n];
+  MPI_Gather((void*)&x, 1, MPI_DOUBLE, (void*)output, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  if (myid == 0) {
+    double e = 0;
+    for (int i = 0; i < n; i++)
+      e += (output[i] - xx[i]) * (output[i] - xx[i]);
+    e = std::sqrt(e);
+    std::cout << "error = " << e << std::endl;
+  }
+
 
   // 一番最後に呼ぶ終了宣言
   MPI_Finalize();
 
   return 0;
-
-  // /* solve: the main computation */
-  // seq::solveSym(n, a, x, b);
-
-  // /* check error norm */
-  // double e = 0;
-  // for (int i = 0; i < n; i++)
-  //   e += (x[i] - xx[i]) * (x[i] - xx[i]);
-  // e = std::sqrt(e);
-
-  // printf("error norm = %e\n", e);
-  // printf("--- good if error is around n * 1e-16 or less\n");
 }
