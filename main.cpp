@@ -1,9 +1,9 @@
 #include "mpi.hpp"
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <mpi.h>
-#include <stdlib.h>
 
 int main(int argc, char** argv)
 {
@@ -48,8 +48,16 @@ int main(int argc, char** argv)
     std::cout << "=============" << std::endl;
   }
 
+  std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+
   MPI_Barrier(MPI_COMM_WORLD);
   para::solveSym(n, a);
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  if (myid == 0) {
+    std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+    std::cout << "time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000 << " [ms]" << std::endl;
+  }
 
   // 一番最後に呼ぶ終了宣言
   MPI_Finalize();
