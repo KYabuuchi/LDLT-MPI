@@ -56,9 +56,19 @@ void ans(int n, double* A, double* b)
     x[i] = t;
   }
 
+  /* backward solve D L^t x = y */
+  for (int i = n - 1; i >= 0; i--) {
+    double t = x[i] / a[i * n + i];
 
-  std::cout << "=============" << std::endl;
+    for (int j = i + 1; j < n; j++)
+      t -= a[j * n + i] * x[j];
+
+    x[i] = t;
+  }
+
+
   // print
+  std::cout << "=============" << std::endl;
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
       std::cout << a[i * n + j] << " ";
@@ -66,9 +76,6 @@ void ans(int n, double* A, double* b)
     std::cout << std::endl;
   }
   std::cout << "=============" << std::endl;
-
-
-  // print
   for (int i = 0; i < n; i++) {
     std::cout << x[i] << " ";
   }
@@ -106,15 +113,15 @@ void solveSym(int n, double* a, double* x, double* b)
     x[i] = t;
   }
 
-  // /* backward solve D L^t x = y */
-  // for (i = n - 1; i >= 0; i--) {
-  //   double t = x[i] / a[i * n + i];
+  /* backward solve D L^t x = y */
+  for (int i = n - 1; i >= 0; i--) {
+    double t = x[i] / a[i * n + i];
 
-  //   for (j = i + 1; j < n; j++)
-  //     t -= a[j * n + i] * x[j];
+    for (int j = i + 1; j < n; j++)
+      t -= a[j * n + i] * x[j];
 
-  //   x[i] = t;
-  // }
+    x[i] = t;
+  }
 }
 
 }  // namespace seq
@@ -140,7 +147,6 @@ void solveSym(int n, double* a, double* b)
       double data;
       MPI_Request rreq;
       MPI_Irecv((void*)&data, 1, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
-      // 待機
       MPI_Status st;
       MPI_Wait(&rreq, &st);
       // 反映
@@ -161,7 +167,6 @@ void solveSym(int n, double* a, double* b)
         double* data = new double[j];
         MPI_Request rreq;
         MPI_Irecv((void*)data, recv_size, MPI_DOUBLE, myid - 1, 0, MPI_COMM_WORLD, &rreq);
-        // 待機
         MPI_Status st;
         MPI_Wait(&rreq, &st);
         // 反映
@@ -185,7 +190,6 @@ void solveSym(int n, double* a, double* b)
         double* send_data = new double[send_size];
         for (int k = 0; k < send_size; k++) send_data[k] = a[j * n + (i + 1 + k)];
         MPI_Isend((void*)send_data, send_size, MPI_DOUBLE, myid + 1, 0, MPI_COMM_WORLD, &sreq);
-        // 待機
         MPI_Status st;
         MPI_Wait(&sreq, &st);
       }
@@ -203,10 +207,10 @@ void solveSym(int n, double* a, double* b)
   //   }
   // }
 
-  double x;
 
-  // 交代代入(Ly=b)
+  // 交代代入1(Ly=b)
   // ===================================================================
+  double y;
   {
     double tmp = b[myid];
     for (int i = 0; i < n; i++) {
@@ -217,13 +221,56 @@ void solveSym(int n, double* a, double* b)
         // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
         double data = 0;
         MPI_Request rreq;
-        std::cout << "recv " << i << "->" << myid << std::endl;
         MPI_Irecv((void*)&data, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &rreq);
-        // 待機
         MPI_Status st;
         MPI_Wait(&rreq, &st);
 
         tmp -= data;
+      }
+
+      // 計算
+      // ===================================================================
+      if (myid == i)
+        y = tmp;
+
+
+      // 送信
+      // ===================================================================
+      if (myid < i) {
+        // 送信(受信データのバッファ，データ長，データ型，送信元ID，etc)
+        MPI_Request sreq;
+        double data = a[n * i + myid] * y;
+
+        MPI_Isend((void*)&data, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &sreq);
+        // 待機
+        MPI_Status st;
+        MPI_Wait(&sreq, &st);
+      }
+    }
+  }
+  // // 確認
+  // // ===================================================================
+  // MPI_Barrier(MPI_COMM_WORLD);
+  // std::cout << y << " @ " << myid << std::endl;
+
+  // 交代代入2(L^t x=y)
+  // ===================================================================
+  double x;
+  {
+    double tmp = y / a[myid * n + myid];
+    for (int i = n - 1; i >= 0; i--) {
+
+      // 受信
+      // ===================================================================
+      if (myid < i) {
+        // 受信(受信データのバッファ，データ長，データ型，送信元ID，etc)
+        double data = 0;
+        MPI_Request rreq;
+        MPI_Irecv((void*)&data, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &rreq);
+        MPI_Status st;
+        MPI_Wait(&rreq, &st);
+
+        tmp -= a[i * n + myid] * data;
       }
 
       // 計算
@@ -234,23 +281,19 @@ void solveSym(int n, double* a, double* b)
 
       // 送信
       // ===================================================================
-      if (myid < i) {
+      if (myid > i) {
         // 送信(受信データのバッファ，データ長，データ型，送信元ID，etc)
         MPI_Request sreq;
-        double data = a[n * i + myid] * x;
-
-        std::cout << "send " << myid << "->" << i << std::endl;
+        double data = x;
         MPI_Isend((void*)&data, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &sreq);
-        // 待機
         MPI_Status st;
         MPI_Wait(&sreq, &st);
       }
     }
   }
-
-  // // 確認
-  // // ===================================================================
-  // MPI_Barrier(MPI_COMM_WORLD);
-  // std::cout << x << " @ " << myid << std::endl;
+  // 確認
+  // ===================================================================
+  MPI_Barrier(MPI_COMM_WORLD);
+  std::cout << x << " @ " << myid << std::endl;
 }
 }  // namespace para
